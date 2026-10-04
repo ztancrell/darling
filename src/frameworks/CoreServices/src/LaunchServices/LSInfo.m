@@ -333,6 +333,16 @@ CFStringRef LSCopyDefaultHandlerForURLScheme(CFStringRef inURLScheme)
 	return NULL; // (could also return "" I guess)
 }
 
+// ponytail: reports success without recording anything, so the scheme still has no handler and
+// LSCopyDefaultHandlerForURLScheme keeps answering NULL. Real fix: a scheme -> bundle ID table
+// that both functions (and LSOpen) use.
+OSStatus LSSetDefaultHandlerForURLScheme(CFStringRef inURLScheme, CFStringRef inHandlerBundleID)
+{
+	NSLog(@"LSSetDefaultHandlerForURLScheme is not implemented. Reporting success without registering "
+	      @"\"%@\" as the handler for scheme \"%@\".", (NSString *)inHandlerBundleID, (NSString *)inURLScheme);
+	return noErr;
+}
+
 OSStatus LSCopyApplicationForMIMEType(CFStringRef inMIMEType, LSRolesMask inRoleMask, CFURLRef *outAppURL)
 {
 	if (!outAppURL)

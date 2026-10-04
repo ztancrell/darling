@@ -1736,7 +1736,15 @@ job_new_anonymous(jobmgr_t jm, pid_t anonpid)
 		return NULL;
 	}
 
+#ifdef DARLING
+	/* Guest PIDs are Linux PIDs, and without a PID namespace (non-root mode) they are the host's,
+	 * which run up to PID_MAX_LIMIT (2^22). XNU's 99999 would turn away every caller on a host
+	 * whose PIDs have passed it.
+	 */
+	if (anonpid > 4194304) {
+#else
 	if (anonpid >= 100000) {
+#endif
 		/* The kernel current defines PID_MAX to be 99999, but that define isn't
 		 * exported.
 		 */

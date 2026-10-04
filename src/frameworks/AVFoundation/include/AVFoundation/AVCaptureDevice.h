@@ -34,6 +34,16 @@ extern NSString *const AVCaptureDeviceTypeExternal;
 extern NSString *const AVCaptureDeviceTypeContinuityCamera;
 extern NSString *const AVCaptureDeviceTypeDeskViewCamera;
 
+typedef NS_ENUM(NSInteger, AVAuthorizationStatus) {
+    AVAuthorizationStatusNotDetermined = 0,
+    AVAuthorizationStatusRestricted = 1,
+    AVAuthorizationStatusDenied = 2,
+    AVAuthorizationStatusAuthorized = 3,
+};
+
 @interface AVCaptureDevice : NSObject
+
++ (AVAuthorizationStatus)authorizationStatusForMediaType:(NSString *)mediaType;
++ (void)requestAccessForMediaType:(NSString *)mediaType completionHandler:(void (^)(BOOL granted))handler;
 
 @end

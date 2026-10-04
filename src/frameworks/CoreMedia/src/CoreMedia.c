@@ -8083,3 +8083,18 @@ void* fig_post_a_symptom_guts(void) {
     if (verbose) puts("STUB: fig_post_a_symptom_guts called");
     return NULL;
 }
+
+// Needed at load by Electron Framework (Riot Client). Values mirror the CoreVideo image-buffer strings they alias.
+const CFStringRef kCMFormatDescriptionExtension_FormatName = CFSTR("FormatName");
+const CFStringRef kCMFormatDescriptionExtension_Depth = CFSTR("Depth");
+const CFStringRef kCMFormatDescriptionExtension_FullRangeVideo = CFSTR("FullRangeVideo");
+const CFStringRef kCMFormatDescriptionExtension_ContentLightLevelInfo = CFSTR("ContentLightLevelInfo");
+const CFStringRef kCMFormatDescriptionExtension_MasteringDisplayColorVolume = CFSTR("MasteringDisplayColorVolume");
+const CFStringRef kCMFormatDescriptionColorPrimaries_DCI_P3 = CFSTR("DCI_P3");
+const CFStringRef kCMFormatDescriptionColorPrimaries_P3_D65 = CFSTR("P3_D65");
+const CFStringRef kCMFormatDescriptionColorPrimaries_ITU_R_2020 = CFSTR("ITU_R_2020");
+const CFStringRef kCMFormatDescriptionTransferFunction_ITU_R_2020 = CFSTR("ITU_R_2020");
+const CFStringRef kCMFormatDescriptionTransferFunction_SMPTE_ST_428_1 = CFSTR("SMPTE_ST_428_1");
+const CFStringRef kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ = CFSTR("SMPTE_ST_2084_PQ");
+const CFStringRef kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG = CFSTR("ITU_R_2100_HLG");
+const CFStringRef kCMFormatDescriptionYCbCrMatrix_ITU_R_2020 = CFSTR("ITU_R_2020");

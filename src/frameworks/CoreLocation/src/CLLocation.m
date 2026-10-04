@@ -19,6 +19,10 @@
 
 #import <CoreLocation/CLLocation.h>
 
+// Needed at load by Electron Framework (Riot Client).
+const double kCLLocationAccuracyBest = -1.0;
+const double kCLLocationAccuracyHundredMeters = 100.0;
+
 @implementation CLLocation
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector

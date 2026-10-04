@@ -19,6 +19,11 @@
 
 #import <ImageCaptureCore/ICCameraDevice.h>
 
+// Needed at load by Electron Framework (Riot Client). Values unverified: named after themselves.
+NSString *const ICOverwrite = @"ICOverwrite";
+NSString *const ICSaveAsFilename = @"ICSaveAsFilename";
+NSString *const ICSavedFilename = @"ICSavedFilename";
+
 @implementation ICCameraDevice
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector

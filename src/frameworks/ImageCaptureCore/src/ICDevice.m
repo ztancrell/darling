@@ -19,6 +19,9 @@
 
 #import <ImageCaptureCore/ICDevice.h>
 
+// Needed at load by Electron Framework (Riot Client). Value unverified: named after itself.
+NSString *const ICTransportTypeMassStorage = @"ICTransportTypeMassStorage";
+
 @implementation ICDevice
 
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelector

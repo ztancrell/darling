@@ -19,8 +19,12 @@
 
 
 #include <MediaAccessibility/MediaAccessibility.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+// Needed at load by Electron Framework (Riot Client). Value unverified: named after itself. Never posted.
+const CFStringRef kMACaptionAppearanceSettingsChangedNotification = CFSTR("kMACaptionAppearanceSettingsChangedNotification");
 
 static int verbose = 0;
 

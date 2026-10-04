@@ -61,3 +61,9 @@ const CFStringRef kCVImageBufferCleanApertureWidthKey = CFSTR("CleanApertureWidt
 const CFStringRef kCVImageBufferCleanApertureHeightKey = CFSTR("CleanApertureHeight");
 const CFStringRef kCVImageBufferCleanApertureHorizontalOffsetKey = CFSTR("CleanApertureHorizontalOffset");
 const CFStringRef kCVImageBufferCleanApertureVerticalOffsetKey = CFSTR("CleanApertureVerticalOffset");
+
+// Needed at load by Electron Framework (Riot Client).
+const CFStringRef kCVImageBufferTransferFunction_sRGB = CFSTR("IEC_sRGB");
+const CFStringRef kCVImageBufferContentLightLevelInfoKey = CFSTR("ContentLightLevelInfo");
+const CFStringRef kCVImageBufferMasteringDisplayColorVolumeKey = CFSTR("MasteringDisplayColorVolume");
+const CFStringRef kCVPixelBufferPoolAllocationThresholdKey = CFSTR("BufferPoolAllocationThreshold");

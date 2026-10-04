@@ -20,3 +20,6 @@
 #include <CoreMedia/CMSampleBuffer.h>
 
 const CFStringRef kCMSampleAttachmentKey_DisplayImmediately = CFSTR("DisplayImmediately");
+
+// Needed at load by Electron Framework (Riot Client).
+const CFStringRef kCMSampleAttachmentKey_IsDependedOnByOthers = CFSTR("IsDependedOnByOthers");

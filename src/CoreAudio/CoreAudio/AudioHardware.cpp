@@ -223,6 +223,12 @@ OSStatus AudioDeviceSetProperty(AudioDeviceID inDevice, const AudioTimeStamp *in
 	return AudioObjectSetPropertyData(inDevice, &aopa, 0, nullptr, inPropertyDataSize, inPropertyData);
 }
 
+// Lowering the volume of everything else on a device ("ducking") is not implemented
+extern "C" OSStatus AudioDeviceDuck(AudioDeviceID inDevice, Float32 inDuckedLevel, const AudioTimeStamp *inStartTime, Float32 inRampDuration)
+{
+	return kAudioHardwareUnsupportedOperationError;
+}
+
 OSStatus AudioHardwareGetPropertyInfo(AudioHardwarePropertyID inPropertyID, UInt32 *outSize, Boolean *outWritable)
 {
 	return AudioDeviceGetPropertyInfo(kAudioObjectSystemObject, 0, false, inPropertyID, outSize, outWritable);

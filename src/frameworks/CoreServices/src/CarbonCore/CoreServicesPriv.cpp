@@ -9,3 +9,9 @@ Boolean _CSCheckFix(CFStringRef str)
 	return 0;
 }
 
+
+Boolean _CSCheckFixDisable(UInt32 fix)
+{
+	// Whether a compatibility fix has been switched off for this process; none ever is
+	return 0;
+}

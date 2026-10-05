@@ -125,6 +125,11 @@ static const struct {
 	{ "/Volumes/SystemRoot/sys", FS_READ },
 	{ "/Volumes/SystemRoot/dev", FS_READ | FS_WRITE_FILE },
 	{ "/Volumes/SystemRoot/dev/shm", FS_READ | FS_WRITE_FILE | FS_TRUNCATE | FS_MAKE_REG | FS_REMOVE_FILE },
+	// host libraries behind Darling's wrappers (X11, fontconfig, the Vulkan driver, ...) and their data
+	{ "/Volumes/SystemRoot/usr/lib", FS_READ | FS_EXECUTE },
+	{ "/Volumes/SystemRoot/usr/lib64", FS_READ | FS_EXECUTE },
+	{ "/Volumes/SystemRoot/usr/share", FS_READ },
+	{ "/Volumes/SystemRoot/etc", FS_READ },
 };
 
 enum skip_reason {

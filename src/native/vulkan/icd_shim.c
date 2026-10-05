@@ -93,6 +93,57 @@ static VkResult shim_EnumerateInstanceExtensionProperties(const char* layer, uin
 	return written == available + 1 ? VK_SUCCESS : VK_INCOMPLETE;
 }
 
+// ANGLE (chromium/5359, as shipped in Electron 22) loads vkGetPhysicalDeviceFragmentShadingRatesKHR
+// into one variable and calls it through another that is never set, so any driver that offers
+// VK_KHR_fragment_shading_rate crashes it at start-up. MoltenVK and SwiftShader do not offer it,
+// which is why this went unnoticed on macOS. Withhold the extension; ANGLE then simply does not use it.
+static const char* const kWithheldDeviceExtensions[] = { "VK_KHR_fragment_shading_rate" };
+
+static int is_withheld(const char* name) {
+	for (size_t i = 0; i < sizeof(kWithheldDeviceExtensions) / sizeof(*kWithheldDeviceExtensions); i++) {
+		if (strcmp(name, kWithheldDeviceExtensions[i]) == 0) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+typedef VkResult (*PFN_EnumerateDeviceExtensionProperties)(void* physicalDevice, const char* layer, uint32_t* count, VkExtensionProperties* props);
+
+static VkResult shim_EnumerateDeviceExtensionProperties(void* physicalDevice, const char* layer, uint32_t* count, VkExtensionProperties* props) {
+	PFN_EnumerateDeviceExtensionProperties real = (PFN_EnumerateDeviceExtensionProperties)real_gipa(NULL, "vkEnumerateDeviceExtensionProperties");
+	uint32_t available = 0;
+	VkResult result = real(physicalDevice, layer, &available, NULL);
+	if (result != VK_SUCCESS) {
+		return result;
+	}
+	VkExtensionProperties* all = calloc(available ? available : 1, sizeof(*all));
+	if (!all) {
+		return -1; // VK_ERROR_OUT_OF_HOST_MEMORY
+	}
+	result = real(physicalDevice, layer, &available, all);
+	if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+		free(all);
+		return result;
+	}
+	uint32_t kept = 0;
+	for (uint32_t i = 0; i < available; i++) {
+		if (!is_withheld(all[i].extensionName)) {
+			all[kept++] = all[i];
+		}
+	}
+	if (!props) {
+		*count = kept;
+		free(all);
+		return VK_SUCCESS;
+	}
+	uint32_t written = *count < kept ? *count : kept;
+	memcpy(props, all, written * sizeof(*props));
+	*count = written;
+	free(all);
+	return written == kept ? VK_SUCCESS : VK_INCOMPLETE;
+}
+
 static VkResult shim_CreateInstance(const VkInstanceCreateInfo* info, const void* allocator, void** instance) {
 	PFN_CreateInstance real = (PFN_CreateInstance)real_gipa(NULL, "vkCreateInstance");
 	VkInstanceCreateInfo copy = *info;
@@ -159,6 +210,7 @@ PFN_vkVoidFunction vk_icdGetInstanceProcAddr(void* instance, const char* name) {
 	static const struct { const char* name; PFN_vkVoidFunction function; } overrides[] = {
 		{ "vkEnumerateInstanceExtensionProperties", (PFN_vkVoidFunction)shim_EnumerateInstanceExtensionProperties },
 		{ "vkCreateInstance", (PFN_vkVoidFunction)shim_CreateInstance },
+		{ "vkEnumerateDeviceExtensionProperties", (PFN_vkVoidFunction)shim_EnumerateDeviceExtensionProperties },
 		{ "vkGetPhysicalDeviceSurfaceSupportKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceSupportKHR },
 		{ "vkGetPhysicalDeviceSurfaceCapabilitiesKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceCapabilitiesKHR },
 		{ "vkGetPhysicalDeviceSurfaceFormatsKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceFormatsKHR },

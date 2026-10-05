@@ -118,6 +118,7 @@ OSStatus AudioConverter::create(const AudioStreamBasicDescription* inSourceForma
 	if (avcodec_open2((*out)->m_decoder, codecIn, nullptr) < 0)
 	{
 		delete *out;
+		*out = nullptr; // or the caller disposes the freed converter a second time
 		std::cerr << "AudioConverter::create(): avcodec_open() failed, format in = " << std::hex << inSourceFormat->mFormatID << ", out = " << inDestinationFormat->mFormatID << std::dec << std::endl;
 
 		return paramErr;

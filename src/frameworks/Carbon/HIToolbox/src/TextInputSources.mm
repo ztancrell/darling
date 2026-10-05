@@ -121,6 +121,13 @@ CFArrayRef TISCreateInputSourceList(CFDictionaryRef properties, Boolean includeA
 	return (CFArrayRef)[list retain];
 }
 
+// The only input source known here is the current keyboard layout, and it is treated as ASCII capable
+// (see the two functions below), so the list is that one source.
+CFArrayRef TISCreateASCIICapableInputSourceList(void)
+{
+	return TISCreateInputSourceList(NULL, false);
+}
+
 TISInputSourceRef TISCopyCurrentASCIICapableKeyboardInputSource(void)
 {
 	return TISCopyCurrentKeyboardLayoutInputSource();

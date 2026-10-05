@@ -79,7 +79,7 @@ static BOOL tracing(void)
 		on = getenv("DARLING_IOSURFACE_TRACE") != NULL;
 	return on;
 }
-#define TRACE(...) do { if (tracing()) fprintf(stderr, "IOSurface[%d]: " __VA_ARGS__, getpid()); } while (0)
+#define TRACE(...) do { if (tracing()) { fprintf(stderr, "IOSurface[%d]: ", getpid()); fprintf(stderr, __VA_ARGS__); } } while (0)
 
 static BOOL headerIsSane(const struct SurfaceHeader* h)
 {

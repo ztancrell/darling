@@ -24,4 +24,11 @@ if (COMPONENT_gui)
 	wrap_elf(dbus libdbus-1.so)
 	wrap_elf(GL libGL.so "System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries")
 	wrap_elf(GLU libGLU.so "System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries")
+
+	# The host's Vulkan driver, loadable by Mach-O code, with a manifest where Vulkan loaders look
+	# (ANGLE's Vulkan backend brings its own loader and finds it there or via VK_DRIVER_FILES).
+	# ponytail: this is Mesa's AMD driver specifically, taken from the build machine. To serve any
+	# GPU, wrap the host loader (libvulkan.so.1) behind a small driver-interface shim instead.
+	wrap_elf(vulkan_radeon libvulkan_radeon.so)
+	install(FILES vulkan/radeon_icd.json DESTINATION libexec/darling/usr/share/vulkan/icd.d)
 endif()

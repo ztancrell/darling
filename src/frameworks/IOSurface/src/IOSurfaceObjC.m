@@ -23,6 +23,8 @@
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 // A surface is one Mach memory entry: a header page followed by the pixels. The memory entry's
@@ -68,6 +70,16 @@ typedef struct
 	_Atomic int32_t localUseCount;
 	NSMutableDictionary* attachments;
 } ImplData;
+
+// Set DARLING_IOSURFACE_TRACE to log each surface made, handed out and opened.
+static BOOL tracing(void)
+{
+	static int on = -1;
+	if (on < 0)
+		on = getenv("DARLING_IOSURFACE_TRACE") != NULL;
+	return on;
+}
+#define TRACE(...) do { if (tracing()) fprintf(stderr, "IOSurface[%d]: " __VA_ARGS__, getpid()); } while (0)
 
 static BOOL headerIsSane(const struct SurfaceHeader* h)
 {
@@ -131,6 +143,7 @@ mach_port_t IOSurfaceCreateMachPort(IOSurfaceRef buffer)
 	ImplData* data = (ImplData*) ((IOSurface*) buffer)->_impl;
 	if (mach_port_mod_refs(mach_task_self(), data->port, MACH_PORT_RIGHT_SEND, 1) != KERN_SUCCESS)
 		return MACH_PORT_NULL;
+	TRACE("port 0x%x for id 0x%x\n", data->port, data->info.surfaceID);
 	return data->port;
 }
 
@@ -240,6 +253,7 @@ mach_port_t IOSurfaceCreateMachPort(IOSurfaceRef buffer)
 		return nil;
 	}
 
+	TRACE("create id 0x%x, %ux%u, format 0x%x, %llu bytes\n", h.surfaceID, h.planes[0].width, h.planes[0].height, h.pixelFormat, h.allocSize);
 	return [self initWithInfo: &h port: port create: YES];
 }
 
@@ -262,10 +276,12 @@ mach_port_t IOSurfaceCreateMachPort(IOSurfaceRef buffer)
 
 	if (!headerIsSane(&h) || mach_port_mod_refs(mach_task_self(), port, MACH_PORT_RIGHT_SEND, 1) != KERN_SUCCESS)
 	{
+		TRACE("lookup from port 0x%x refused\n", port);
 		[self release];
 		return nil;
 	}
 
+	TRACE("lookup from port 0x%x: id 0x%x, %ux%u\n", port, h.surfaceID, h.planes[0].width, h.planes[0].height);
 	return [self initWithInfo: &h port: port create: NO];
 }
 

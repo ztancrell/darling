@@ -365,8 +365,12 @@ static char *convert_regex_literals(const char *profile, bool *balanced) {
 
 // one evaluation; returns 0 on success, -1 on error with the interpreter's message in `message`
 static int evaluate_once(const char *profile, struct state *state, char *const *unknown_words, size_t unknown_word_count, char *message) {
-	scheme *sc = scheme_init_new();
-	if (!sc) {
+	// Not scheme_init_new(): that mallocs the interpreter without zeroing it, and scheme_init() leaves
+	// some fields untouched, so a second interpreter in the same process inherits stale values from
+	// the first's freed memory (seen as a crash in the second pass, depending on heap layout).
+	scheme *sc = calloc(1, sizeof(*sc));
+	if (!sc || !scheme_init(sc)) {
+		free(sc);
 		snprintf(message, ERROR_BUFFER_SIZE, "out of memory");
 		return -1;
 	}

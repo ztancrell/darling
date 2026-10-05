@@ -22,10 +22,36 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <CarbonCore/MacErrors.h>
 #include <stdexcept>
 #include <cstring>
+#include <mutex>
+#include <unordered_set>
+
+// A converter reference is checked against the converters that exist before it is used, as on macOS,
+// where references are looked up in a table and an unknown one gets an error back. Chromium 108 relies
+// on that: its AudioToolbox decoder disposes a never-initialised reference in its destructor.
+static std::mutex g_convertersLock;
+static std::unordered_set<AudioConverter*> g_converters;
+
+static AudioConverter* resolve(AudioConverterRef ref)
+{
+	std::lock_guard<std::mutex> guard(g_convertersLock);
+	AudioConverter* converter = (AudioConverter*)ref;
+	return g_converters.count(converter) ? converter : nullptr;
+}
+
+#define RESOLVE_OR_FAIL(ref) \
+	AudioConverter* converter = resolve(ref); \
+	if (!converter) \
+		return kAudio_ParamError
 
 OSStatus AudioConverterNew(const AudioStreamBasicDescription* inSourceFormat, const AudioStreamBasicDescription* inDestinationFormat, AudioConverterRef* outAudioConverter)
 {
-	return AudioConverter::create(inSourceFormat, inDestinationFormat, (AudioConverter**)outAudioConverter);
+	OSStatus status = AudioConverter::create(inSourceFormat, inDestinationFormat, (AudioConverter**)outAudioConverter);
+	if (status == noErr && *outAudioConverter)
+	{
+		std::lock_guard<std::mutex> guard(g_convertersLock);
+		g_converters.insert((AudioConverter*)*outAudioConverter);
+	}
+	return status;
 }
 
 OSStatus AudioConverterNewSpecific(const AudioStreamBasicDescription* inSourceFormat, const AudioStreamBasicDescription* inDestinationFormat, UInt32 inNumberClassDescriptions, const AudioClassDescription* nClassDescriptions, AudioConverterRef* outAudioConverter)
@@ -36,9 +62,10 @@ OSStatus AudioConverterNewSpecific(const AudioStreamBasicDescription* inSourceFo
 
 OSStatus AudioConverterReset(AudioConverterRef inAudioConverter)
 {
+	RESOLVE_OR_FAIL(inAudioConverter);
 	if (inAudioConverter)
 	{
-		((AudioConverter*)inAudioConverter)->flush();
+		converter->flush();
 		return noErr;
 	}
 	else
@@ -47,27 +74,37 @@ OSStatus AudioConverterReset(AudioConverterRef inAudioConverter)
 
 OSStatus AudioConverterDispose(AudioConverterRef inAudioConverter)
 {
-	delete (AudioConverter*)inAudioConverter;
+	AudioConverter* converter = (AudioConverter*)inAudioConverter;
+	{
+		std::lock_guard<std::mutex> guard(g_convertersLock);
+		if (!g_converters.erase(converter))
+			return kAudio_ParamError;
+	}
+	delete converter;
 	return noErr;
 }
 
 OSStatus AudioConverterGetProperty(AudioConverterRef inAudioConverter, AudioConverterPropertyID inPropertyID, UInt32 *ioPropertyDataSize, void *outPropertyData)
 {
-	return ((AudioConverter*)inAudioConverter)->getProperty(inPropertyID, ioPropertyDataSize, outPropertyData);
+	RESOLVE_OR_FAIL(inAudioConverter);
+	return converter->getProperty(inPropertyID, ioPropertyDataSize, outPropertyData);
 }
 
 OSStatus AudioConverterGetPropertyInfo(AudioConverterRef inAudioConverter, AudioConverterPropertyID inPropertyID, UInt32 *outSize, Boolean *outWritable)
 {
-	return ((AudioConverter*)inAudioConverter)->getPropertyInfo(inPropertyID, outSize, outWritable);
+	RESOLVE_OR_FAIL(inAudioConverter);
+	return converter->getPropertyInfo(inPropertyID, outSize, outWritable);
 }
 
 OSStatus AudioConverterSetProperty(AudioConverterRef inAudioConverter, AudioConverterPropertyID inPropertyID, UInt32 inPropertyDataSize, const void *inPropertyData)
 {
-	return ((AudioConverter*)inAudioConverter)->setProperty(inPropertyID, inPropertyDataSize, inPropertyData);
+	RESOLVE_OR_FAIL(inAudioConverter);
+	return converter->setProperty(inPropertyID, inPropertyDataSize, inPropertyData);
 }
 
 OSStatus AudioConverterConvertBuffer(AudioConverterRef inAudioConverter, UInt32 inInputDataSize, const void* inInputData, UInt32 *ioOutputDataSize, void *outOutputData)
 {
+	RESOLVE_OR_FAIL(inAudioConverter);
 	AudioBufferList in, out;
 	OSStatus stat;
 
@@ -82,7 +119,7 @@ OSStatus AudioConverterConvertBuffer(AudioConverterRef inAudioConverter, UInt32 
 	out.mBuffers[0].mDataByteSize = *ioOutputDataSize;
 	out.mBuffers[0].mData = outOutputData;
 
-	stat = AudioConverterConvertComplexBuffer(inAudioConverter, inInputDataSize/((AudioConverter*)inAudioConverter)->frameSize(), &in, &out);
+	stat = AudioConverterConvertComplexBuffer(inAudioConverter, inInputDataSize/converter->frameSize(), &in, &out);
 	*ioOutputDataSize = out.mBuffers[0].mDataByteSize;
 
 	return stat;
@@ -90,11 +127,13 @@ OSStatus AudioConverterConvertBuffer(AudioConverterRef inAudioConverter, UInt32 
 
 OSStatus AudioConverterFillComplexBuffer(AudioConverterRef inAudioConverter, AudioConverterComplexInputDataProc inInputDataProc, void *inInputDataProcUserData, UInt32 *ioOutputDataPacketSize, AudioBufferList *outOutputData, AudioStreamPacketDescription* outPacketDescription)
 {
-	return ((AudioConverter*)inAudioConverter)->fillComplex(inInputDataProc, inInputDataProcUserData, ioOutputDataPacketSize, outOutputData, outPacketDescription);
+	RESOLVE_OR_FAIL(inAudioConverter);
+	return converter->fillComplex(inInputDataProc, inInputDataProcUserData, ioOutputDataPacketSize, outOutputData, outPacketDescription);
 }
 
 OSStatus AudioConverterConvertComplexBuffer(AudioConverterRef inAudioConverter, UInt32 inNumberPCMFrames, const AudioBufferList *inInputData, AudioBufferList *outOutputData)
 {
+	RESOLVE_OR_FAIL(inAudioConverter);
 	OSStatus status;
 	UInt32 dataPacketSize;
 	int64_t totalOutBytes = 0;
@@ -123,7 +162,7 @@ OSStatus AudioConverterConvertComplexBuffer(AudioConverterRef inAudioConverter, 
 	for (UInt32 i = 0; i < outOutputData->mNumberBuffers; i++)
 		totalOutBytes += outOutputData->mBuffers[i].mDataByteSize;
 
-	dataPacketSize = totalOutBytes / ((AudioConverter*)inAudioConverter)->frameSize();
+	dataPacketSize = totalOutBytes / converter->frameSize();
 
 	status = AudioConverterFillComplexBuffer(inAudioConverter, proc, (void*) inInputData, &dataPacketSize, outOutputData, nullptr);
 	return status;

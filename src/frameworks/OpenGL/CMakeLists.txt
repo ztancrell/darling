@@ -31,7 +31,6 @@ add_framework(OpenGL
         system
         GL
         GLU
-        EGL
         CoreFoundation
         CoreGraphics
 )

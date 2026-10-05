@@ -22,6 +22,65 @@
 #define APPLE
 #define __APPLE__
 
+// The host's EGL is loaded privately, not linked. macOS has no system EGL, and an application that
+// brings its own (ANGLE, in every Chromium) looks its functions up by name through libraries that
+// depend on this framework; linked here, the host's functions answered instead of the application's.
+#include <dlfcn.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define HOST_EGL_FUNCTIONS(X) \
+    X(eglBindAPI) \
+    X(eglChooseConfig) \
+    X(eglCreateContext) \
+    X(eglCreateWindowSurface) \
+    X(eglDestroyContext) \
+    X(eglDestroySurface) \
+    X(eglGetConfigAttrib) \
+    X(eglGetDisplay) \
+    X(eglGetPlatformDisplay) \
+    X(eglInitialize) \
+    X(eglMakeCurrent) \
+    X(eglSwapBuffers) \
+    X(eglSwapInterval) \
+    X(eglTerminate)
+
+static struct {
+#define X(name) __typeof__(name) *name;
+    HOST_EGL_FUNCTIONS(X)
+#undef X
+} host_egl_functions;
+
+static void host_egl_load(void) {
+    void *library = dlopen("/usr/lib/native/libEGL.dylib", RTLD_LAZY | RTLD_LOCAL);
+#define X(name) host_egl_functions.name = library ? dlsym(library, #name) : NULL; \
+    if (!host_egl_functions.name) { fprintf(stderr, "OpenGL: the host's EGL has no " #name ": %s\n", dlerror()); abort(); }
+    HOST_EGL_FUNCTIONS(X)
+#undef X
+}
+
+static __typeof__(host_egl_functions) *host_egl(void) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, host_egl_load);
+    return &host_egl_functions;
+}
+
+#define eglBindAPI host_egl()->eglBindAPI
+#define eglChooseConfig host_egl()->eglChooseConfig
+#define eglCreateContext host_egl()->eglCreateContext
+#define eglCreateWindowSurface host_egl()->eglCreateWindowSurface
+#define eglDestroyContext host_egl()->eglDestroyContext
+#define eglDestroySurface host_egl()->eglDestroySurface
+#define eglGetConfigAttrib host_egl()->eglGetConfigAttrib
+#define eglGetDisplay host_egl()->eglGetDisplay
+#define eglGetPlatformDisplay host_egl()->eglGetPlatformDisplay
+#define eglInitialize host_egl()->eglInitialize
+#define eglMakeCurrent host_egl()->eglMakeCurrent
+#define eglSwapBuffers host_egl()->eglSwapBuffers
+#define eglSwapInterval host_egl()->eglSwapInterval
+#define eglTerminate host_egl()->eglTerminate
+
 static EGLDisplay display;
 
 static EGLConfig config;

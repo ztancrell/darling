@@ -11,6 +11,7 @@ add_circular(system_sandbox FAT
 	SOURCES
 	sandbox.c
 	profile.c
+	landlock.c
 	tinyscheme/scheme.c
 
 	SIBLINGS

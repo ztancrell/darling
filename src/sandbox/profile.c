@@ -134,7 +134,7 @@ static void append_text(scheme *sc, pointer p, char **text, struct state *state)
 	}
 }
 
-static void add_rule(struct state *state, bool allow, const char *operation, const char *filter, const char *value) {
+static void add_rule(struct state *state, bool allow, const char *operation, const char *filter, const char *value, bool approximate) {
 	struct sbx_profile *out = state->out;
 	struct sbx_rule *grown = realloc(out->rules, (out->count + 1) * sizeof(*grown));
 	if (!grown) {
@@ -145,6 +145,7 @@ static void add_rule(struct state *state, bool allow, const char *operation, con
 
 	struct sbx_rule *rule = &out->rules[out->count];
 	rule->allow = allow;
+	rule->approximate = approximate;
 	rule->operation = strdup(operation);
 	rule->filter = filter ? strdup(filter) : NULL;
 	rule->value = value ? strdup(value) : NULL;
@@ -194,7 +195,7 @@ static pointer ff_rule(scheme *sc, pointer args) {
 		const char *operation_name = symname(pair_cdr(operation));
 
 		if (filter_count == 0) {
-			add_rule(state, allow, operation_name, NULL, NULL);
+			add_rule(state, allow, operation_name, NULL, NULL, false);
 			continue;
 		}
 
@@ -206,7 +207,32 @@ static pointer ff_rule(scheme *sc, pointer args) {
 			// (%filter kind arg...)
 			pointer kind = pair_car(pair_cdr(filter));
 			pointer filter_args = pair_cdr(pair_cdr(filter));
+			bool approximate = false;
 			char *value = NULL;
+
+			// (require-all (path "/x") <other conditions>): keep the one path, marked approximate
+			if (kind == intern(sc, "require-all")) {
+				pointer the_path = sc->NIL;
+				size_t path_count = 0;
+				for (pointer k = filter_args; is_pair(k); k = pair_cdr(k)) {
+					pointer inner = pair_car(k);
+					if (!is_tagged(sc, inner, "%filter")) {
+						continue;
+					}
+					pointer inner_kind = pair_car(pair_cdr(inner));
+					pointer inner_args = pair_cdr(pair_cdr(inner));
+					if ((inner_kind == intern(sc, "path") || inner_kind == intern(sc, "literal") || inner_kind == intern(sc, "subpath")) && is_pair(inner_args) && pair_cdr(inner_args) == sc->NIL && is_string(pair_car(inner_args))) {
+						the_path = inner;
+						path_count++;
+					}
+				}
+				if (path_count == 1) {
+					kind = pair_car(pair_cdr(the_path));
+					filter_args = pair_cdr(pair_cdr(the_path));
+					approximate = true;
+				}
+			}
+
 			if (is_pair(filter_args) && pair_cdr(filter_args) == sc->NIL) {
 				append_text(sc, pair_car(filter_args), &value, state);
 			} else {
@@ -217,7 +243,7 @@ static pointer ff_rule(scheme *sc, pointer args) {
 					append_text(sc, pair_car(k), &value, state);
 				}
 			}
-			add_rule(state, allow, operation_name, symname(kind), value ? value : "");
+			add_rule(state, allow, operation_name, symname(kind), value ? value : "", approximate);
 			free(value);
 		}
 	}

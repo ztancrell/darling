@@ -1,4 +1,7 @@
 #include "sandbox.h"
+#include "profile.h"
+#include <stdbool.h>
+#include <unistd.h>
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
@@ -8,21 +11,56 @@
 // DUMMY implementation
 const enum sandbox_filter_type SANDBOX_CHECK_NO_REPORT = SANDBOX_FILTER_NONE;
 
-// ponytail: Darling has no sandbox. This reports success without restricting anything, so a caller
-// that sandboxes itself (Chromium's helper processes) keeps running, unrestricted. macOS only sets
-// *errorbuf on failure, and callers treat a non-NULL error as failure, so it must stay NULL here.
-// Real fix: an actual sandbox, or failing with a real error.
+// set once this process has confined itself; sandbox_check(getpid(), NULL, ...) reports it
+static bool sandboxed;
+
+// ponytail: Apple's named profiles (kSBXProfileNoInternet, ...) and sandbox extensions are not
+// implemented. A request for a named profile reports success without restricting anything, as all
+// sandbox requests did before; it is logged. Real fix: write those profiles.
 static int pretend_sandbox_init(const char *function, char **errorbuf)
 {
-	fprintf(stderr, "DARLING %s: no sandbox is implemented; reporting success without restricting this process\n", function);
+	fprintf(stderr, "DARLING %s: named profiles are not implemented; reporting success without restricting this process\n", function);
 	if (errorbuf)
 		*errorbuf = NULL;
 	return 0;
 }
 
+// Evaluates the profile and confines the process's file access to it (see landlock.c for what is and
+// is not enforced). macOS only sets *errorbuf on failure, and callers treat a non-NULL error as failure.
+static int real_sandbox_init(const char *profile, const char *const parameters[], char **errorbuf)
+{
+	struct sbx_profile rules;
+	char *error = NULL;
+	int result = -1;
+
+	if (errorbuf)
+		*errorbuf = NULL;
+
+	if (!profile) {
+		error = strdup("no profile given");
+	} else if (sbx_profile_evaluate(profile, parameters, &rules, &error) == 0) {
+		result = sbx_landlock_apply(&rules, &error);
+		sbx_profile_free(&rules);
+	}
+
+	if (result == 0) {
+		sandboxed = true;
+	} else {
+		fprintf(stderr, "DARLING sandbox: failed, process is not sandboxed: %s\n", error ? error : "unknown error");
+		if (errorbuf)
+			*errorbuf = error;
+		else
+			free(error);
+	}
+	return result;
+}
+
 int sandbox_init(const char *profile, uint64_t flags, char **errorbuf)
 {
-	return pretend_sandbox_init("sandbox_init", errorbuf);
+	// SANDBOX_NAMED: `profile` is the name of a built-in profile, not profile text
+	if (flags & SANDBOX_NAMED)
+		return pretend_sandbox_init("sandbox_init", errorbuf);
+	return real_sandbox_init(profile, NULL, errorbuf);
 }
 
 const char kSBXProfileNoInternet[] = "no_internet";
@@ -62,16 +100,27 @@ void sandbox_free_error(char *errorbuf)
 
 int sandbox_init_with_parameters(const char *profile, uint64_t flags, const char *const parameters[], char **errorbuf)
 {
-	return pretend_sandbox_init("sandbox_init_with_parameters", errorbuf);
+	if (flags & SANDBOX_NAMED)
+		return pretend_sandbox_init("sandbox_init_with_parameters", errorbuf);
+	return real_sandbox_init(profile, parameters, errorbuf);
 }
 
 int sandbox_init_with_extensions(const char *profile, uint64_t flags, const char *const extensions[], char **errorbuf)
 {
-	return pretend_sandbox_init("sandbox_init_with_extensions", errorbuf);
+	if (flags & SANDBOX_NAMED)
+		return pretend_sandbox_init("sandbox_init_with_extensions", errorbuf);
+	// the extensions are not honoured: rules that depend on them are simply not allowed
+	return real_sandbox_init(profile, NULL, errorbuf);
 }
 
+// With no operation: 1 if the process is sandboxed, 0 if not. With an operation: 0 if it is
+// allowed, 1 if denied.
+// ponytail: only knows about this process, and answers "allowed" to every operation, including
+// file operations Landlock will in fact refuse. Real fix: answer from the evaluated profile.
 int sandbox_check(pid_t pid, const char *operation, enum sandbox_filter_type type, ...)
 {
+	if (!operation && pid == getpid())
+		return sandboxed;
 	return 0;
 }
 

@@ -40,6 +40,7 @@ static const char sample[] =
 	"(let ((dir (subpath (string-append (param \"CACHE\") \"/metal\")))) (deny file-read* dir))\n"
 	"(let loop ((i 0)) (if (< i 3) (begin (allow file* (subpath (param (string-append \"DIR_\" (number->string i))))) (loop (+ i 1)))))\n"
 	"(allow file-read-data (require-all (subpath \"/dev\") (vnode-type CHARACTER-DEVICE)))\n"
+	"(allow file-read* (require-any (subpath \"/a\") (subpath \"/b\")))\n"
 	"(allow network-outbound (remote tcp \"*:443\"))\n"
 	"(deny signal (with no-log))\n"
 	// things this reader has never heard of
@@ -85,7 +86,12 @@ int main(int argc, char **argv) {
 	CHECK(!has(&p, 1, "process-exec", NULL, NULL), "guarded by (defined? ...) of something undefined: skipped");
 	CHECK(has(&p, 0, "file-read*", "subpath", "/var/cache/metal"), "deny with a let-bound filter");
 	CHECK(has(&p, 1, "file*", "subpath", "/d0") && has(&p, 1, "file*", "subpath", "/d2"), "loop over numbered parameters");
-	CHECK(has(&p, 1, "file-read-data", "require-all", "(%filter subpath /dev) (%filter vnode-type character-device)"), "compound filter kept as text");
+	int approximate = 0;
+	for (size_t i = 0; i < p.count; i++) {
+		if (!strcmp(p.rules[i].operation, "file-read-data") && p.rules[i].filter && !strcmp(p.rules[i].filter, "subpath") && !strcmp(p.rules[i].value, "/dev")) approximate = p.rules[i].approximate;
+	}
+	CHECK(approximate && !has(&p, 1, "file-read-data", "require-all", NULL), "path with extra conditions is kept as that path, marked approximate");
+	CHECK(has(&p, 1, "file-read*", "require-any", NULL), "other compound filters kept as text");
 	CHECK(has(&p, 1, "network-outbound", "remote", "tcp *:443"), "filter with bare words");
 	CHECK(has(&p, 0, "signal", NULL, NULL), "modifier ignored");
 	CHECK(!has(&p, 1, "file-read*", "subpath", "/secret-a") && !has(&p, 1, "some-new-operation", "subpath", NULL), "rule with an unknown operation left out");

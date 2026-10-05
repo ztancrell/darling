@@ -12,6 +12,9 @@ struct sbx_rule {
 	char *operation;
 	char *filter; // filter kind ("subpath", "literal", "global-name", ...), or NULL
 	char *value;  // the filter's argument(s) as text, or NULL
+	// The profile attached more conditions to this path than `filter` says, as in
+	// (require-all (path "/x") (vnode-type REGULAR-FILE)); only the path is kept.
+	bool approximate;
 };
 
 struct sbx_profile {
@@ -28,5 +31,10 @@ struct sbx_profile {
 int sbx_profile_evaluate(const char *profile, const char *const params[], struct sbx_profile *out, char **error);
 
 void sbx_profile_free(struct sbx_profile *profile);
+
+// Confines the calling process to the file rules of `profile`, using Landlock. Cannot be undone.
+// Returns 0 on success. On failure returns -1 and, if `error` is not NULL, sets *error to a
+// malloc'd message; the process is then not confined.
+int sbx_landlock_apply(const struct sbx_profile *profile, char **error);
 
 #endif

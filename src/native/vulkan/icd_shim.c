@@ -62,8 +62,25 @@ static int load_driver(void) {
 	return real_gipa != NULL;
 }
 
+// The driver resolves physical-device functions only against an instance, so each override's real
+// counterpart is looked up with the instance the loader passes when it asks for the override.
+enum override_index {
+	ovr_EnumerateInstanceExtensionProperties,
+	ovr_CreateInstance,
+	ovr_EnumerateDeviceExtensionProperties,
+	ovr_GetPhysicalDeviceSurfaceSupportKHR,
+	ovr_GetPhysicalDeviceSurfaceCapabilitiesKHR,
+	ovr_GetPhysicalDeviceSurfaceFormatsKHR,
+	ovr_GetPhysicalDeviceSurfacePresentModesKHR,
+	ovr_count,
+};
+static PFN_vkVoidFunction real_functions[ovr_count];
+#define ovr_index_vkGetPhysicalDeviceSurfaceCapabilitiesKHR ovr_GetPhysicalDeviceSurfaceCapabilitiesKHR
+#define ovr_index_vkGetPhysicalDeviceSurfaceFormatsKHR ovr_GetPhysicalDeviceSurfaceFormatsKHR
+#define ovr_index_vkGetPhysicalDeviceSurfacePresentModesKHR ovr_GetPhysicalDeviceSurfacePresentModesKHR
+
 static VkResult shim_EnumerateInstanceExtensionProperties(const char* layer, uint32_t* count, VkExtensionProperties* props) {
-	PFN_EnumerateInstanceExtensionProperties real = (PFN_EnumerateInstanceExtensionProperties)real_gipa(NULL, "vkEnumerateInstanceExtensionProperties");
+	PFN_EnumerateInstanceExtensionProperties real = (PFN_EnumerateInstanceExtensionProperties)real_functions[ovr_EnumerateInstanceExtensionProperties];
 	if (layer) {
 		return real(layer, count, props);
 	}
@@ -111,7 +128,7 @@ static int is_withheld(const char* name) {
 typedef VkResult (*PFN_EnumerateDeviceExtensionProperties)(void* physicalDevice, const char* layer, uint32_t* count, VkExtensionProperties* props);
 
 static VkResult shim_EnumerateDeviceExtensionProperties(void* physicalDevice, const char* layer, uint32_t* count, VkExtensionProperties* props) {
-	PFN_EnumerateDeviceExtensionProperties real = (PFN_EnumerateDeviceExtensionProperties)real_gipa(NULL, "vkEnumerateDeviceExtensionProperties");
+	PFN_EnumerateDeviceExtensionProperties real = (PFN_EnumerateDeviceExtensionProperties)real_functions[ovr_EnumerateDeviceExtensionProperties];
 	uint32_t available = 0;
 	VkResult result = real(physicalDevice, layer, &available, NULL);
 	if (result != VK_SUCCESS) {
@@ -145,7 +162,7 @@ static VkResult shim_EnumerateDeviceExtensionProperties(void* physicalDevice, co
 }
 
 static VkResult shim_CreateInstance(const VkInstanceCreateInfo* info, const void* allocator, void** instance) {
-	PFN_CreateInstance real = (PFN_CreateInstance)real_gipa(NULL, "vkCreateInstance");
+	PFN_CreateInstance real = (PFN_CreateInstance)real_functions[ovr_CreateInstance];
 	VkInstanceCreateInfo copy = *info;
 	const char** names = calloc(info->enabledExtensionCount ? info->enabledExtensionCount : 1, sizeof(*names));
 	if (!names) {
@@ -177,7 +194,7 @@ static int is_apple_surface(VkSurfaceKHR surface) {
 		if (is_apple_surface(surface)) { \
 			return VK_ERROR_SURFACE_LOST_KHR; \
 		} \
-		VkResult (*real)(void*, VkSurfaceKHR, __VA_ARGS__) = (VkResult (*)(void*, VkSurfaceKHR, __VA_ARGS__))real_gipa(NULL, #name); \
+		VkResult (*real)(void*, VkSurfaceKHR, __VA_ARGS__) = (VkResult (*)(void*, VkSurfaceKHR, __VA_ARGS__))real_functions[ovr_index_##name]; \
 		return real args; \
 	}
 
@@ -190,7 +207,7 @@ static VkResult shim_vkGetPhysicalDeviceSurfaceSupportKHR(void* physicalDevice, 
 		*supported = 0;
 		return VK_SUCCESS;
 	}
-	VkResult (*real)(void*, uint32_t, VkSurfaceKHR, uint32_t*) = (VkResult (*)(void*, uint32_t, VkSurfaceKHR, uint32_t*))real_gipa(NULL, "vkGetPhysicalDeviceSurfaceSupportKHR");
+	VkResult (*real)(void*, uint32_t, VkSurfaceKHR, uint32_t*) = (VkResult (*)(void*, uint32_t, VkSurfaceKHR, uint32_t*))real_functions[ovr_GetPhysicalDeviceSurfaceSupportKHR];
 	return real(physicalDevice, queueFamily, surface, supported);
 }
 
@@ -207,19 +224,25 @@ PFN_vkVoidFunction vk_icdGetInstanceProcAddr(void* instance, const char* name) {
 	if (!load_driver()) {
 		return NULL;
 	}
-	static const struct { const char* name; PFN_vkVoidFunction function; } overrides[] = {
-		{ "vkEnumerateInstanceExtensionProperties", (PFN_vkVoidFunction)shim_EnumerateInstanceExtensionProperties },
-		{ "vkCreateInstance", (PFN_vkVoidFunction)shim_CreateInstance },
-		{ "vkEnumerateDeviceExtensionProperties", (PFN_vkVoidFunction)shim_EnumerateDeviceExtensionProperties },
-		{ "vkGetPhysicalDeviceSurfaceSupportKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceSupportKHR },
-		{ "vkGetPhysicalDeviceSurfaceCapabilitiesKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceCapabilitiesKHR },
-		{ "vkGetPhysicalDeviceSurfaceFormatsKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceFormatsKHR },
-		{ "vkGetPhysicalDeviceSurfacePresentModesKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfacePresentModesKHR },
+	static const struct { const char* name; PFN_vkVoidFunction function; } overrides[ovr_count] = {
+		[ovr_EnumerateInstanceExtensionProperties] = { "vkEnumerateInstanceExtensionProperties", (PFN_vkVoidFunction)shim_EnumerateInstanceExtensionProperties },
+		[ovr_CreateInstance] = { "vkCreateInstance", (PFN_vkVoidFunction)shim_CreateInstance },
+		[ovr_EnumerateDeviceExtensionProperties] = { "vkEnumerateDeviceExtensionProperties", (PFN_vkVoidFunction)shim_EnumerateDeviceExtensionProperties },
+		[ovr_GetPhysicalDeviceSurfaceSupportKHR] = { "vkGetPhysicalDeviceSurfaceSupportKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceSupportKHR },
+		[ovr_GetPhysicalDeviceSurfaceCapabilitiesKHR] = { "vkGetPhysicalDeviceSurfaceCapabilitiesKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceCapabilitiesKHR },
+		[ovr_GetPhysicalDeviceSurfaceFormatsKHR] = { "vkGetPhysicalDeviceSurfaceFormatsKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfaceFormatsKHR },
+		[ovr_GetPhysicalDeviceSurfacePresentModesKHR] = { "vkGetPhysicalDeviceSurfacePresentModesKHR", (PFN_vkVoidFunction)shim_vkGetPhysicalDeviceSurfacePresentModesKHR },
 	};
-	for (size_t i = 0; i < sizeof(overrides) / sizeof(*overrides); i++) {
+	for (size_t i = 0; i < ovr_count; i++) {
 		if (strcmp(name, overrides[i].name) == 0) {
-			// only override what the driver actually provides, so the override never outlives the real one
-			return real_gipa(instance, name) ? overrides[i].function : NULL;
+			// only override what the driver provides, resolved against this instance; the real
+			// pointer is kept for the override to call
+			PFN_vkVoidFunction real = real_gipa(instance, name);
+			if (!real) {
+				return NULL;
+			}
+			real_functions[i] = real;
+			return overrides[i].function;
 		}
 	}
 	return real_gipa(instance, name);

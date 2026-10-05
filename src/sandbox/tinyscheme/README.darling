@@ -1,0 +1,11 @@
+TinyScheme 1.42, unmodified.
+Source: https://downloads.sourceforge.net/project/tinyscheme/tinyscheme/tinyscheme-1.42/tinyscheme-1.42.tar.gz
+sha256 of that archive: 17b0b1bffd22f3d49d5833e22a120b339039d2cfda0b46d6fc51dd2f01b407ad
+Licence: COPYING (3-clause BSD).
+
+Used by ../profile.c to evaluate sandbox profiles, which are Scheme programs (Apple's libsandbox
+embeds TinyScheme for the same purpose). Only scheme.c is compiled; dynload.c and the standalone
+REPL are not included.
+
+init_scm.h is init.scm as a C string, generated with:
+  python3 -c 'import sys;d=open("init.scm","rb").read();print("static const char tinyscheme_init_scm[] = {"+",".join(map(str,d))+",0};")' > init_scm.h

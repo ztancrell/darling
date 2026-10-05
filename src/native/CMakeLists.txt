@@ -30,5 +30,11 @@ if (COMPONENT_gui)
 	# ponytail: this is Mesa's AMD driver specifically, taken from the build machine. To serve any
 	# GPU, wrap the host loader (libvulkan.so.1) behind a small driver-interface shim instead.
 	wrap_elf(vulkan_radeon libvulkan_radeon.so)
+	# A shim in front of it that advertises VK_EXT_metal_surface; see vulkan/icd_shim.c for why.
+	set(DYLIB_INSTALL_NAME "/usr/lib/native/libvulkan_darling_icd.dylib")
+	add_darling_library(vulkan_darling_icd SHARED vulkan/icd_shim.c)
+	target_link_libraries(vulkan_darling_icd PRIVATE system)
+	make_fat(vulkan_darling_icd)
+	install(TARGETS vulkan_darling_icd DESTINATION libexec/darling/usr/lib/native)
 	install(FILES vulkan/radeon_icd.json DESTINATION libexec/darling/usr/share/vulkan/icd.d)
 endif()

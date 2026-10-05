@@ -19,18 +19,12 @@
 
 #include <vDSP/vDSP.h>
 
+// C[i] = A[i] + *B: B is a single scalar, not a vector.
 void vDSP_vsadd(const float *__A, vDSP_Stride __IA, const float *__B, float *__C, vDSP_Stride __IC, vDSP_Length __N)
 {
-	if (__IA == 1 && __IC == 1)
-	{
-		#pragma clang loop vectorize(enable)
-		for (vDSP_Length i = 0; i < __N; i++)
-			__C[i] = __A[i] + __B[i];
-	}
-	else
-	{
-		#pragma clang loop vectorize(enable)
-		for (vDSP_Length i = 0; i < __N; i++)
-			__C[i * __IC] = __A[i * __IA] + __B[i * __IA];
-	}
+	const float b = *__B;
+
+	#pragma clang loop vectorize(enable)
+	for (vDSP_Length i = 0; i < __N; i++)
+		__C[i * __IC] = __A[i * __IA] + b;
 }

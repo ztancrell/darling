@@ -174,3 +174,25 @@ int rootless_check_datavault_flag(const char* path, const char* storage_class) {
 int sandbox_query_approval_policy_for_path(const char* query, const char* path, char **approval) {
 	return -1;
 }
+
+/* ---- Darling: local discovery placeholders, NOT implementations ----
+ * Each logs its own name when called and returns zero, so one run shows which of these an
+ * application actually reaches. Replace each with a real implementation, or remove it. */
+#include <stdio.h>
+#ifndef DARLING_UNIMPLEMENTED
+#define DARLING_UNIMPLEMENTED(sym) \
+	__attribute__((visibility("default"))) long darling_unimplemented_##sym(void) __asm__("_" #sym); \
+	long darling_unimplemented_##sym(void) { fprintf(stderr, "DARLING unimplemented function called: " #sym "\n"); return 0; }
+#endif
+DARLING_UNIMPLEMENTED(responsibility_get_pid_responsible_for_pid)
+DARLING_UNIMPLEMENTED(sandbox_extension_consume)
+DARLING_UNIMPLEMENTED(sandbox_extension_issue_file)
+DARLING_UNIMPLEMENTED(sandbox_extension_release)
+
+/* libSystem is expected to export this compiler runtime call (compiler-rt's atomic.c is not built).
+ * ponytail: plain copy, not atomic; build atomic.c if a caller needs the lock. */
+#include <string.h>
+__attribute__((visibility("default"))) void darling_atomic_load(int size, void *src, void *dest, int model) __asm__("___atomic_load");
+void darling_atomic_load(int size, void *src, void *dest, int model) {
+	memcpy(dest, src, size);
+}

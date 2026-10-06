@@ -540,6 +540,49 @@ static void ensureHostRootSymlinks(const char* prefixPath)
 
 void createDir(const char* path);
 
+// Appends `line` to `<prefix><file>` unless a line of that file already starts with "<name>:".
+static void ensureAccountLine(const char* prefixPath, const char* file, const char* name, const char* line)
+{
+	char path[4096];
+	char existing[1024];
+	size_t nameLength = strlen(name);
+	bool found = false;
+
+	snprintf(path, sizeof(path), "%s%s", prefixPath, file);
+	FILE* f = fopen(path, "r+");
+	if (!f)
+		return; // a prefix without account files is set up elsewhere
+
+	while (fgets(existing, sizeof(existing), f))
+	{
+		if (strncmp(existing, name, nameLength) == 0 && existing[nameLength] == ':')
+		{
+			found = true;
+			break;
+		}
+	}
+	if (!found)
+	{
+		// the last line may lack its newline
+		bool needNewline = false;
+		if (fseek(f, -1, SEEK_END) == 0)
+			needNewline = (fgetc(f) != '\n');
+		fseek(f, 0, SEEK_END);
+		fprintf(f, "%s%s\n", needNewline ? "\n" : "", line);
+	}
+	fclose(f);
+}
+
+// trustd's launchd job runs as _trustd. Without that account launchd cannot start it, and every
+// certificate evaluation in the prefix fails. Same ids as on macOS.
+// ponytail: a host user whose own uid or gid is 282 would share them with this account.
+static void ensureTrustdAccount(const char* prefixPath)
+{
+	ensureAccountLine(prefixPath, "/private/etc/passwd", "_trustd", "_trustd:*:282:282:trustd:/var/empty:/usr/bin/false");
+	ensureAccountLine(prefixPath, "/private/etc/master.passwd", "_trustd", "_trustd:*:282:282::0:0:trustd:/var/empty:/usr/bin/false");
+	ensureAccountLine(prefixPath, "/private/etc/group", "_trustd", "_trustd:*:282:");
+}
+
 static void ensureCupsSymlink(const char* prefixPath)
 {
 	const char* host_sockets[4];
@@ -1839,6 +1882,7 @@ int main(int argc, char ** argv)
 	ensureCupsSymlink(prefix);
 	ensureKeychains(prefix);
 	ensureSystemVersion(prefix);
+	ensureTrustdAccount(prefix);
 	restoreRootIds();
 
 	int c;

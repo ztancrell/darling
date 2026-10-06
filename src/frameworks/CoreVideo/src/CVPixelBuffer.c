@@ -276,6 +276,17 @@ CGSize CVImageBufferGetEncodedSize(CVImageBufferRef imageBuffer)
 	return (CGSize){(CGFloat)imageBuffer->width, (CGFloat)imageBuffer->height};
 }
 
+// Buffers here carry no clean-aperture or pixel-aspect attachments, so both equal the encoded size.
+CGSize CVImageBufferGetDisplaySize(CVImageBufferRef imageBuffer)
+{
+	return CVImageBufferGetEncodedSize(imageBuffer);
+}
+
+CGRect CVImageBufferGetCleanRect(CVImageBufferRef imageBuffer)
+{
+	return (CGRect){{0, 0}, CVImageBufferGetEncodedSize(imageBuffer)};
+}
+
 CVReturn CVMetalTextureCacheCreate(
 	CFAllocatorRef allocator,
 	CFDictionaryRef cacheAttributes,

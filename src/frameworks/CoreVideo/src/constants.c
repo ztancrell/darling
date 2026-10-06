@@ -67,3 +67,7 @@ const CFStringRef kCVImageBufferTransferFunction_sRGB = CFSTR("IEC_sRGB");
 const CFStringRef kCVImageBufferContentLightLevelInfoKey = CFSTR("ContentLightLevelInfo");
 const CFStringRef kCVImageBufferMasteringDisplayColorVolumeKey = CFSTR("MasteringDisplayColorVolume");
 const CFStringRef kCVPixelBufferPoolAllocationThresholdKey = CFSTR("BufferPoolAllocationThreshold");
+
+// Needed at load by Chromium Embedded Framework (League client).
+const CFStringRef kCVBufferPropagatedAttachmentsKey = CFSTR("PropagatedAttachments");
+const CFStringRef kCVBufferNonPropagatedAttachmentsKey = CFSTR("NonPropagatedAttachments");

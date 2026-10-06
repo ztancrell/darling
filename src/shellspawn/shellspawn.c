@@ -33,6 +33,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/event.h>
 #include <sys/ioctl.h>
 #include <signal.h>
+#include <servers/bootstrap.h>
 #include "shellspawn.h"
 #include "duct_signals.h"
 
@@ -54,6 +55,14 @@ int main(int argc, const char** argv)
 	// in order to read the exit status of the shell process,
 	// we have to allow it to become a zombie, therefore we need to
 	// restore the sigaction of SIGCHLD of the child shellspawn
+	// Only launchd's copy may serve the socket: a shellspawn started any other way has no
+	// bootstrap port, so every guest it spawned would be cut off from launchd's services.
+	if (bootstrap_port == MACH_PORT_NULL)
+	{
+		fprintf(stderr, "shellspawn: no bootstrap port (not started by launchd); exiting\n");
+		return EXIT_FAILURE;
+	}
+
 	setupSigchild();
 	setupSocket();
 	listenForConnections();

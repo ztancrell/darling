@@ -382,70 +382,6 @@ static int stopPrefixOrphans(pid_t *liveServer)
 	return stopped;
 }
 
-static void spawnShellspawn(void)
-{
-	pid_t spid = fork();
-	if (spid < 0)
-	{
-		perror("fork shellspawn");
-		return;
-	}
-	if (spid == 0)
-	{
-		setsid();
-		if (!getenv("DARLING_DEBUG"))
-		{
-			int devnull = open("/dev/null", O_RDWR);
-			if (devnull >= 0)
-			{
-				dup2(devnull, STDIN_FILENO);
-				dup2(devnull, STDOUT_FILENO);
-				dup2(devnull, STDERR_FILENO);
-				if (devnull > 2)
-					close(devnull);
-			}
-			else
-			{
-				close(STDIN_FILENO);
-				close(STDOUT_FILENO);
-				close(STDERR_FILENO);
-			}
-		}
-
-		char dserverSock[4096];
-		snprintf(dserverSock, sizeof(dserverSock), "%s/.darlingserver.sock", prefix);
-
-		const char* instPrefix = getInstallPrefix();
-		char mldrDyldRoot[4096];
-		snprintf(mldrDyldRoot, sizeof(mldrDyldRoot), "%s/libexec/darling", instPrefix);
-		char vchrootArg0[4096];
-		snprintf(vchrootArg0, sizeof(vchrootArg0), "mldr!%s/libexec/darling/usr/libexec/darling/vchroot", instPrefix);
-		char mldrBin[4096];
-		snprintf(mldrBin, sizeof(mldrBin), "%s/libexec/darling/bin/mldr", instPrefix);
-
-		setenv("DARLING_NONROOT", "1", 1);
-		setenv("__mldr_sockpath", dserverSock, 1);
-		setenv("__mldr_DYLD_ROOT_PATH", mldrDyldRoot, 1);
-
-		execl(mldrBin,
-		      vchrootArg0,
-		      "vchroot",
-		      prefix,
-		      "/usr/libexec/shellspawn",
-		      NULL);
-		_exit(1);
-	}
-	char pidPath[4096];
-	snprintf(pidPath, sizeof(pidPath), "%s/.shellspawn.pid", prefix);
-	int fd = open(pidPath, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
-	if (fd < 0 || dprintf(fd, "%d\n", spid) < 0) {
-		fprintf(stderr, "Cannot record this prefix's shellspawn PID.\n");
-		if (fd >= 0) close(fd);
-		exit(1);
-	}
-	close(fd);
-}
-
 static void ensureProcSymlink(const char* prefixPath)
 {
 	char procPath[4096];
@@ -2089,9 +2025,6 @@ int main(int argc, char ** argv)
 		setupWorkdir();
 		pidInit = spawnInitProcess();
 		putInitPid(pidInit);
-		
-		if (g_nonroot)
-			spawnShellspawn();
 
 		// Wait until shellspawn starts. The socket lives inside the user's prefix
 		// and is created by shellspawn with mode 0600 owned by the user, so probe
@@ -2115,7 +2048,7 @@ int main(int argc, char ** argv)
 		snprintf(socketPath, sizeof(socketPath), "%s" SHELLSPAWN_SOCKPATH, prefix);
 		if (existsAsOriginalUser(socketPath) != 0)
 		{
-			spawnShellspawn();
+			// launchd keeps shellspawn alive (KeepAlive in its plist); wait for it to come back.
 			for (int i = 0; i < SHELLSPAWN_WAIT_RETRIES; i++)
 			{
 				if (existsAsOriginalUser(socketPath) == 0)
@@ -2619,19 +2552,15 @@ int connectToShellspawn(void)
 	{
 		if (g_nonroot && (errno == ECONNREFUSED || errno == ENOENT))
 		{
-			close(sockfd);
-			unlink(addr.sun_path);
-			spawnShellspawn();
+			// shellspawn is launchd's job and launchd restarts it; the socket file is the
+			// restarted copy's to replace, so leave it alone and keep trying to connect.
 			for (int i = 0; i < SHELLSPAWN_WAIT_RETRIES; i++)
 			{
-				if (access(addr.sun_path, F_OK) == 0)
+				if (connect(sockfd, (struct sockaddr*) &addr, sizeof(addr)) == 0)
+					return sockfd;
+				if (errno != ECONNREFUSED && errno != ENOENT)
 					break;
 				usleep(50000);
-			}
-			sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
-			if (sockfd != -1 && connect(sockfd, (struct sockaddr*) &addr, sizeof(addr)) == 0)
-			{
-				return sockfd;
 			}
 		}
 		fprintf(stderr, "Error connecting to shellspawn in the container (%s): %s\n", addr.sun_path, strerror(errno));

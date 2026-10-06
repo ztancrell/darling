@@ -246,11 +246,3 @@ DARLING_UNIMPLEMENTED(responsibility_get_pid_responsible_for_pid)
 DARLING_UNIMPLEMENTED(sandbox_extension_consume)
 DARLING_UNIMPLEMENTED(sandbox_extension_issue_file)
 DARLING_UNIMPLEMENTED(sandbox_extension_release)
-
-/* libSystem is expected to export this compiler runtime call (compiler-rt's atomic.c is not built).
- * ponytail: plain copy, not atomic; build atomic.c if a caller needs the lock. */
-#include <string.h>
-__attribute__((visibility("default"))) void darling_atomic_load(int size, void *src, void *dest, int model) __asm__("___atomic_load");
-void darling_atomic_load(int size, void *src, void *dest, int model) {
-	memcpy(dest, src, size);
-}

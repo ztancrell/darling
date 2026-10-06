@@ -80,6 +80,43 @@ static void print_displays(void)
     printf("          UI Looks like: %d x %d\n\n", w, h);
 }
 
+// One entry of the array `system_profiler -xml` prints: {_dataType, _items}.
+static void add_xml_type(CFMutableArrayRef out, const char *type, CFArrayRef items)
+{
+    CFMutableDictionaryRef d = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFStringRef t = CFStringCreateWithCString(NULL, type, kCFStringEncodingUTF8);
+    CFDictionarySetValue(d, CFSTR("_dataType"), t);
+    CFDictionarySetValue(d, CFSTR("_items"), items);
+    CFArrayAppendValue(out, d);
+    CFRelease(t);
+    CFRelease(d);
+}
+
+static void add_xml_displays(CFMutableArrayRef out)
+{
+    char gpu[128];
+    int w = 1920, h = 1080;
+    get_gpu_and_res(gpu, sizeof(gpu), &w, &h);
+
+    CFStringRef model = CFStringCreateWithCString(NULL, gpu, kCFStringEncodingUTF8);
+    if (!model) model = CFSTR("Generic GPU");
+    CFStringRef res = CFStringCreateWithFormat(NULL, NULL, CFSTR("%d x %d"), w, h);
+
+    const void *dk[] = { CFSTR("_name"), CFSTR("_spdisplays_pixels"), CFSTR("_spdisplays_resolution") };
+    const void *dv[] = { CFSTR("Display"), res, res };
+    CFDictionaryRef disp = CFDictionaryCreate(NULL, dk, dv, 3, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFArrayRef disps = CFArrayCreate(NULL, (const void **)&disp, 1, &kCFTypeArrayCallBacks);
+
+    // No spdisplays_vram: the amount is not known here, and macOS omits the key too when it has none.
+    const void *gk[] = { CFSTR("_name"), CFSTR("sppci_model"), CFSTR("sppci_bus"), CFSTR("sppci_device_type"), CFSTR("spdisplays_ndrvs") };
+    const void *gv[] = { model, model, CFSTR("spdisplays_pcie_device"), CFSTR("spdisplays_gpu"), disps };
+    CFDictionaryRef card = CFDictionaryCreate(NULL, gk, gv, 5, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFArrayRef items = CFArrayCreate(NULL, (const void **)&card, 1, &kCFTypeArrayCallBacks);
+
+    add_xml_type(out, "SPDisplaysDataType", items);
+    CFRelease(items); CFRelease(card); CFRelease(disps); CFRelease(disp); CFRelease(res); CFRelease(model);
+}
+
 static void print_hardware(void)
 {
     char cpu[256] = "Unknown";
@@ -132,7 +169,29 @@ static void print_software(void)
 
 int main(int argc, char *argv[])
 {
-    if (argc <= 1) {
+    int xml = 0, types = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-xml") == 0) xml = 1;
+        else if (argv[i][0] != '-') types++;
+    }
+
+    if (xml) {
+        CFMutableArrayRef out = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+        CFArrayRef none = CFArrayCreate(NULL, NULL, 0, &kCFTypeArrayCallBacks);
+        for (int i = 1; i < argc; i++) {
+            if (argv[i][0] == '-') continue;
+            if (strcmp(argv[i], "SPDisplaysDataType") == 0) add_xml_displays(out);
+            // Other types: a well-formed entry with no items, so a caller's plist parse still succeeds.
+            else add_xml_type(out, argv[i], none);
+        }
+        if (types == 0) add_xml_displays(out);
+        CFDataRef data = CFPropertyListCreateData(NULL, out, kCFPropertyListXMLFormat_v1_0, 0, NULL);
+        if (!data) return 1;
+        fwrite(CFDataGetBytePtr(data), 1, CFDataGetLength(data), stdout);
+        return 0;
+    }
+
+    if (types == 0) {
         print_hardware();
         print_displays();
         print_software();

@@ -88,3 +88,25 @@ at startup and validates its user and exact prefix socket environment before
 obtaining a shutdown target. Existing nonroot containers started by an older
 launcher lack this record and are refused rather than falling back to a global
 process-name search. Start disposable nonroot tests with the fixed launcher.
+
+## Server exits during startup
+
+Run the child-status tests without a container:
+
+```sh
+cc -Wall -Wextra -Werror -O2 tests/launcher/startup-child.c -o /tmp/darling-startup-child-test
+/tmp/darling-startup-child-test
+```
+
+Exercise a built, non-setuid launcher with fake server executables:
+
+```sh
+python3 tests/launcher/startup-exit.py /absolute/path/to/build/src/startup/darling
+```
+
+An optional second argument is an old launcher for the negative control: it
+must still be waiting two seconds after the fake server exits. The fixtures
+cover exit codes 0 and 23, signal termination, a delayed exit and exec failure.
+They use temporary install trees and prefixes; no Darling container or guest
+is started. The separate C test verifies running children are left alone and
+only the requested child is reaped.

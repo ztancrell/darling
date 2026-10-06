@@ -47,6 +47,7 @@ along with Darling.  If not, see <http://www.gnu.org/licenses/>.
 #include "prefix-state.h"
 #include "profile-prefix.h"
 #include "proc-dir.h"
+#include "startup-child.h"
 
 // Between Linux 4.9 and 4.11, a strange bug has been introduced
 // which prevents connecting to Unix sockets if the socket was
@@ -2031,6 +2032,8 @@ int main(int argc, char ** argv)
 		// it with the user's ids rather than as root.
 		for (int i = 0; i < SHELLSPAWN_WAIT_RETRIES; i++)
 		{
+			if (darlingStartupChildFailed(pidInit, stderr))
+				return 1;
 			if (existsAsOriginalUser(socketPath) == 0)
 				break;
 			usleep(50000);

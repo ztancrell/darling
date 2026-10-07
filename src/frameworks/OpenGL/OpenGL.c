@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h>  // for fprintf(stderr, "unimplemented")
 
 #include <pthread.h>
@@ -40,6 +41,7 @@
     X(eglGetConfigAttrib) \
     X(eglGetDisplay) \
     X(eglGetPlatformDisplay) \
+    X(eglGetProcAddress) \
     X(eglInitialize) \
     X(eglMakeCurrent) \
     X(eglSwapBuffers) \
@@ -75,6 +77,7 @@ static __typeof__(host_egl_functions) *host_egl(void) {
 #define eglGetConfigAttrib host_egl()->eglGetConfigAttrib
 #define eglGetDisplay host_egl()->eglGetDisplay
 #define eglGetPlatformDisplay host_egl()->eglGetPlatformDisplay
+#define eglGetProcAddress host_egl()->eglGetProcAddress
 #define eglInitialize host_egl()->eglInitialize
 #define eglMakeCurrent host_egl()->eglMakeCurrent
 #define eglSwapBuffers host_egl()->eglSwapBuffers
@@ -500,6 +503,40 @@ GLuint CGLGetPixelFormatRetainCount(CGLPixelFormatObj pixelFormat) {
 // ponytail: contexts made here do not move to a window display registered later in the same process.
 static pthread_once_t offscreen_display_once = PTHREAD_ONCE_INIT;
 
+#define DARLING_EGL_PLATFORM_DEVICE_EXT 0x313F
+#define DARLING_EGL_DRM_RENDER_NODE_FILE_EXT 0x3377
+
+// The host GPU that drives the display, as a device display. The driver's own default for a process
+// with no window can be a second GPU that shows nothing, and DRI_PRIME=1 only means "the other one",
+// which flips the windowed processes onto that GPU instead. EGL_NO_DISPLAY when the host does not
+// say which device is the display's; the caller then takes the driver's default.
+static EGLDisplay display_gpu_open(void) {
+    EGLBoolean (*query_devices)(EGLint, void **, EGLint *) = (void *)eglGetProcAddress("eglQueryDevicesEXT");
+    const char *(*query_device_string)(void *, EGLint) = (void *)eglGetProcAddress("eglQueryDeviceStringEXT");
+    void *devices[16];
+    EGLint device_count = 0;
+
+    if (!query_devices || !query_device_string || !query_devices(16, devices, &device_count))
+        return EGL_NO_DISPLAY;
+    for (EGLint i = 0; i < device_count; i++) {
+        // "/dev/dri/renderD128"; software devices have no node
+        const char *node = query_device_string(devices[i], DARLING_EGL_DRM_RENDER_NODE_FILE_EXT);
+        const char *name = node ? strrchr(node, '/') : NULL;
+        char path[128];
+        if (name == NULL)
+            continue;
+        snprintf(path, sizeof(path), "/Volumes/SystemRoot/sys/class/drm%s/device/boot_vga", name);
+        FILE *file = fopen(path, "r");
+        if (file == NULL)
+            continue;
+        int boot_vga = fgetc(file);
+        fclose(file);
+        if (boot_vga == '1')
+            return eglGetPlatformDisplay(DARLING_EGL_PLATFORM_DEVICE_EXT, devices[i], NULL);
+    }
+    return EGL_NO_DISPLAY;
+}
+
 static void offscreen_display_open(void) {
     static const EGLint attributes[] = {
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -513,7 +550,10 @@ static void offscreen_display_open(void) {
 
     if (display != EGL_NO_DISPLAY)
         return;
-    EGLDisplay candidate = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
+    // an explicit DRI_PRIME is the user's choice of GPU, and the driver applies it to its default
+    EGLDisplay candidate = getenv("DRI_PRIME") ? EGL_NO_DISPLAY : display_gpu_open();
+    if (candidate == EGL_NO_DISPLAY)
+        candidate = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
     if (candidate == EGL_NO_DISPLAY || !eglInitialize(candidate, NULL, NULL))
         return;
     if (!eglChooseConfig(candidate, attributes, &candidate_config, 1, &count) || count < 1) {

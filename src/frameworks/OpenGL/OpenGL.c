@@ -6,6 +6,7 @@
 
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/CGLInternal.h>
+#include <OpenGL/gl.h>
 #include <CoreFoundation/CFDictionary.h>
 #include <pthread.h>
 
@@ -394,6 +395,11 @@ CGLError CGLTexImageIOSurface2D(CGLContextObj ctx, GLenum target, GLenum interna
                                 GLsizei width, GLsizei height, GLenum format, GLenum type,
                                 void *ioSurface, GLuint plane)
 {
+    // Gives the texture bound in the current context storage of the surface's size, so that it can be
+    // sampled and attached to a framebuffer.
+    // ponytail: the storage is the texture's own, not the surface's memory. What is drawn into it does
+    // not reach the surface, and the surface's pixels are not what gets sampled.
+    glTexImage2D(target, 0, internal_format, width, height, 0, format, type, NULL);
     return kCGLNoError;
 }
 

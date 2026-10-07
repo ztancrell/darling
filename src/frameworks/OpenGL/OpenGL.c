@@ -391,15 +391,124 @@ const char *CGLErrorString(CGLError error) {
     }
 }
 
+// Textures that stand for an IOSurface. On macOS such a texture *is* the surface's memory. Here it has
+// storage of its own on the host GPU, and what was drawn into it is copied to the surface's memory
+// when the context is flushed, which is the point from which other processes may expect to see it.
+// ponytail: every surface texture is read back on every flush, a full GPU-to-CPU copy each. Track
+// which were drawn to, or share one GPU buffer between the processes, when this shows in profiles.
+// ponytail: the copy is one way. A surface's pixels are not uploaded, so sampling a surface that was
+// filled by the CPU (a video frame) reads nothing; and texture names are not told apart by share group.
+#define SURFACE_TEXTURES_MAX 64
+static struct surface_texture {
+    GLuint texture;
+    GLenum target, format, type;
+    GLsizei width, height;
+    CFTypeRef surface;
+} surface_textures[SURFACE_TEXTURES_MAX];
+static pthread_mutex_t surface_textures_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void surface_texture_forget(struct surface_texture *entry) {
+    CFRelease(entry->surface);
+    memset(entry, 0, sizeof(*entry));
+}
+
+static void surface_textures_read_back(void) {
+    static void *(*base_address)(CFTypeRef);
+    static size_t (*bytes_per_row)(CFTypeRef);
+    GLint read_framebuffer = 0, pack_buffer = 0, row_length = 0;
+    GLuint framebuffer = 0;
+
+    pthread_mutex_lock(&surface_textures_lock);
+    for (int i = 0; i < SURFACE_TEXTURES_MAX; i++) {
+        struct surface_texture *entry = &surface_textures[i];
+        if (entry->surface == NULL)
+            continue;
+        if (!glIsTexture(entry->texture)) {
+            surface_texture_forget(entry);
+            continue;
+        }
+        if (framebuffer == 0) {
+            // whoever passed a surface has IOSurface.framework loaded; this framework does not link it
+            if (!base_address)
+                base_address = dlsym(RTLD_DEFAULT, "IOSurfaceGetBaseAddress");
+            if (!bytes_per_row)
+                bytes_per_row = dlsym(RTLD_DEFAULT, "IOSurfaceGetBytesPerRow");
+            if (!base_address || !bytes_per_row)
+                break;
+            glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_framebuffer);
+            glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pack_buffer);
+            glGetIntegerv(GL_PACK_ROW_LENGTH, &row_length);
+            glGenFramebuffers(1, &framebuffer);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        }
+        void *pixels = base_address(entry->surface);
+        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, entry->target, entry->texture, 0);
+        if (pixels == NULL || glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            continue;
+        // ponytail: assumes four bytes per pixel, the only kind the window side shows
+        glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(bytes_per_row(entry->surface) / 4));
+        glReadPixels(0, 0, entry->width, entry->height, entry->format, entry->type, pixels);
+    }
+    if (framebuffer != 0) {
+        glPixelStorei(GL_PACK_ROW_LENGTH, row_length);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, pack_buffer);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, read_framebuffer);
+        glDeleteFramebuffers(1, &framebuffer);
+    }
+    pthread_mutex_unlock(&surface_textures_lock);
+}
+
+// glFlush and glFinish are this framework's own, in front of the host's that it re-exports, so that
+// surface textures reach their surfaces. Libraries/libGL.dylib is a link to this framework because
+// ANGLE loads that path and looks the GL functions up in it.
+static void host_gl_call(const char *name) {
+    static void *library;
+    if (!library)
+        library = dlopen("/usr/lib/native/libGL.dylib", RTLD_LAZY | RTLD_LOCAL);
+    void (*function)(void) = library ? dlsym(library, name) : NULL;
+    if (function)
+        function();
+}
+
+void glFlush(void) {
+    if (CGLGetCurrentContext() != NULL)
+        surface_textures_read_back();
+    host_gl_call("glFlush");
+}
+
+void glFinish(void) {
+    if (CGLGetCurrentContext() != NULL)
+        surface_textures_read_back();
+    host_gl_call("glFinish");
+}
+
 CGLError CGLTexImageIOSurface2D(CGLContextObj ctx, GLenum target, GLenum internal_format,
                                 GLsizei width, GLsizei height, GLenum format, GLenum type,
                                 void *ioSurface, GLuint plane)
 {
+    GLint texture = 0;
+
     // Gives the texture bound in the current context storage of the surface's size, so that it can be
     // sampled and attached to a framebuffer.
-    // ponytail: the storage is the texture's own, not the surface's memory. What is drawn into it does
-    // not reach the surface, and the surface's pixels are not what gets sampled.
     glTexImage2D(target, 0, internal_format, width, height, 0, format, type, NULL);
+    glGetIntegerv(target == GL_TEXTURE_RECTANGLE ? GL_TEXTURE_BINDING_RECTANGLE : GL_TEXTURE_BINDING_2D, &texture);
+    if (texture == 0 || ioSurface == NULL)
+        return kCGLNoError;
+
+    pthread_mutex_lock(&surface_textures_lock);
+    struct surface_texture *entry = NULL;
+    for (int i = 0; i < SURFACE_TEXTURES_MAX; i++) {
+        struct surface_texture *candidate = &surface_textures[i];
+        // a texture stands for one surface, and a surface is drawn through one texture
+        if (candidate->surface != NULL && (candidate->texture == (GLuint)texture || candidate->surface == ioSurface))
+            surface_texture_forget(candidate);
+        if (candidate->surface == NULL && entry == NULL)
+            entry = candidate;
+    }
+    if (entry != NULL)
+        *entry = (struct surface_texture){ (GLuint)texture, target, format, type, width, height, CFRetain(ioSurface) };
+    pthread_mutex_unlock(&surface_textures_lock);
     return kCGLNoError;
 }
 

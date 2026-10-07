@@ -38,5 +38,8 @@ add_framework(OpenGL
 set_property(TARGET OpenGL APPEND_STRING PROPERTY LINK_FLAGS
     " -Wl,-reexport_library,${CMAKE_BINARY_DIR}/src/native/libGL.dylib \
     -Wl,-reexport_library,${CMAKE_BINARY_DIR}/src/native/libGLU.dylib ")
+# ANGLE loads this path for the GL functions; it has to get this framework's glFlush (see OpenGL.c)
+InstallSymlink(../OpenGL
+			"${CMAKE_INSTALL_PREFIX}/libexec/darling/System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib")
 InstallSymlink(Versions/Current/Libraries
 			"${CMAKE_INSTALL_PREFIX}/libexec/darling/System/Library/Frameworks/OpenGL.framework/Libraries")

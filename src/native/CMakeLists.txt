@@ -22,7 +22,8 @@ if (COMPONENT_gui)
 	wrap_elf(xkbcommon libxkbcommon.so)
 	wrap_elf(cairo libcairo.so)
 	wrap_elf(dbus libdbus-1.so)
-	wrap_elf(GL libGL.so "System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries")
+	# in usr/lib/native: OpenGL.framework puts its own glFlush in front of this one
+	wrap_elf(GL libGL.so)
 	wrap_elf(GLU libGLU.so "System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries")
 
 	# The host's Vulkan driver, loadable by Mach-O code, with a manifest where Vulkan loaders look

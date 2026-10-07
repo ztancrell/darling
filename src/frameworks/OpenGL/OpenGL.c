@@ -129,6 +129,7 @@ static inline int attribute_has_argument(CGLPixelFormatAttribute attr) {
     case kCGLPFAAccumSize:
     case kCGLPFARendererID:
     case kCGLPFADisplayMask:
+    case kCGLPFAOpenGLProfile:
         return 1;
     default:
         return 0;
@@ -408,10 +409,11 @@ CGLError CGLChoosePixelFormat(
     int count = attributes_count(attrs);
 
     format->retain_count = 1;
-    format->attributes = malloc(sizeof(CGLPixelFormatAttribute) * count);
+    format->attributes = malloc(sizeof(CGLPixelFormatAttribute) * (count + 1));
     for (int i = 0; i < count; i++) {
         format->attributes[i] = attrs[i];
     }
+    format->attributes[count] = 0;
 
     *result = format;
     *number_of_screens = 1;
@@ -489,6 +491,53 @@ GLuint CGLGetPixelFormatRetainCount(CGLPixelFormatObj pixelFormat) {
     return pixelFormat->retain_count;
 }
 
+#ifndef EGL_PLATFORM_SURFACELESS_MESA
+#define EGL_PLATFORM_SURFACELESS_MESA 0x31DD
+#endif
+
+// A process with no window (Chromium's GPU helper, command line tools) never registers a native
+// display. It gets the host driver's off-screen display, so contexts are still created on the GPU.
+// ponytail: contexts made here do not move to a window display registered later in the same process.
+static pthread_once_t offscreen_display_once = PTHREAD_ONCE_INIT;
+
+static void offscreen_display_open(void) {
+    static const EGLint attributes[] = {
+        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+        EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
+        EGL_NONE
+    };
+    EGLConfig candidate_config = NULL;
+    EGLint count = 0;
+
+    if (display != EGL_NO_DISPLAY)
+        return;
+    EGLDisplay candidate = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
+    if (candidate == EGL_NO_DISPLAY || !eglInitialize(candidate, NULL, NULL))
+        return;
+    if (!eglChooseConfig(candidate, attributes, &candidate_config, 1, &count) || count < 1) {
+        eglTerminate(candidate);
+        return;
+    }
+    display = candidate;
+    config = candidate_config;
+    num_config = count;
+}
+
+// The kCGLPFAOpenGLProfile value of a pixel format, or 0 when it names none (legacy profile).
+static GLint pixel_format_profile(CGLPixelFormatObj format) {
+    if (format == NULL || format->attributes == NULL)
+        return 0;
+    for (int i = 0; format->attributes[i] != 0; i++) {
+        if (format->attributes[i] == kCGLPFAOpenGLProfile)
+            return (GLint)format->attributes[i + 1];
+        if (attribute_has_argument(format->attributes[i]))
+            i++;
+    }
+    return 0;
+}
+
 CGLError CGLCreateContext(CGLPixelFormatObj pixelFormat, CGLContextObj share, CGLContextObj *resultp) {
 
     if (resultp == NULL)
@@ -499,7 +548,20 @@ CGLError CGLCreateContext(CGLPixelFormatObj pixelFormat, CGLContextObj share, CG
     if (share != NULL) {
         egl_share = share->egl_context;
     }
-    EGLContext egl_context = eglCreateContext(display, config, egl_share, NULL);
+    if (display == EGL_NO_DISPLAY)
+        pthread_once(&offscreen_display_once, offscreen_display_open);
+    // the bound API is per thread, and EGL's default is OpenGL ES
+    eglBindAPI(EGL_OPENGL_API);
+
+    GLint profile = pixel_format_profile(pixelFormat);
+    const EGLint core_attributes[] = {
+        EGL_CONTEXT_MAJOR_VERSION, profile == kCGLOGLPVersion_GL4_Core ? 4 : 3,
+        EGL_CONTEXT_MINOR_VERSION, profile == kCGLOGLPVersion_GL4_Core ? 1 : 2,
+        EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+        EGL_NONE
+    };
+    EGLContext egl_context = eglCreateContext(display, config, egl_share,
+        profile >= kCGLOGLPVersion_3_2_Core ? core_attributes : NULL);
 
     if (egl_context == EGL_NO_CONTEXT) {
         return kCGLBadContext;

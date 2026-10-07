@@ -74,10 +74,18 @@ enum {
     kCGLPFARemotePBuffer = 91,
     kCGLPFAAllowOfflineRenderers = 96,
     kCGLPFAAcceleratedCompute = 97,
+    kCGLPFAOpenGLProfile = 99,
     kCGLPFAVirtualScreenCount = 128,
 };
 
 typedef uint32_t CGLPixelFormatAttribute;
+
+typedef enum _CGLOpenGLProfile {
+    kCGLOGLPVersion_Legacy = 0x1000,
+    kCGLOGLPVersion_3_2_Core = 0x3200,
+    kCGLOGLPVersion_GL3_Core = 0x3200,
+    kCGLOGLPVersion_GL4_Core = 0x4100,
+} CGLOpenGLProfile;
 
 typedef enum {
     kCGLCPSwapInterval = 222,

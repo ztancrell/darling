@@ -33,6 +33,8 @@ extern CFStringRef const kVTCompressionPropertyKey_MaxFrameDelayCount;
 extern CFStringRef const kVTCompressionPropertyKey_ExpectedFrameRate;
 
 extern CFStringRef const kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder;
+extern CFStringRef const kVTVideoEncoderSpecification_EnableLowLatencyRateControl;
+extern CFStringRef const kVTCompressionPropertyKey_BaseLayerFrameRateFraction;
 
 extern CFStringRef const kVTCompressionPropertyKey_ColorPrimaries;
 extern CFStringRef const kVTCompressionPropertyKey_TransferFunction;

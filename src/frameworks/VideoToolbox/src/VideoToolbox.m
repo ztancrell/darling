@@ -192,7 +192,8 @@ void* VTCompressionSessionCopySupportedPropertyDictionary(void)
 void* VTCompressionSessionCreate(void)
 {
     if (verbose) puts("STUB: VTCompressionSessionCreate called");
-    return NULL;
+    // kVTCouldNotFindVideoEncoderErr: there is no encoder. NULL would read as noErr with no session made.
+    return (void *)(intptr_t)-12908;
 }
 
 void* VTCompressionSessionEncodeFrame(void)
